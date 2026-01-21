@@ -21,6 +21,57 @@ from mdr_gtk.util import read_text
 from mdr_gtk.models import RegistrableItem
 
 
+
+class _RefDropDown:
+    """Small helper that maps a Gtk.DropDown selection to UUID values.
+
+    `options` is a list of (uuid, label) tuples.
+    If `allow_none` is True, the first option is an empty selection.
+    """
+
+    def __init__(self, options, allow_none: bool = False, none_label: str = "—"):
+        self.allow_none = allow_none
+        self._uuids = []
+        labels = []
+
+        if allow_none:
+            self._uuids.append(None)
+            labels.append(none_label)
+
+        for u, lbl in (options or []):
+            self._uuids.append(u)
+            labels.append(lbl or "")
+
+        # Ensure the dropdown always has at least one row.
+        if not labels:
+            self._uuids = [None]
+            labels = [none_label]
+
+        self.widget = Gtk.DropDown.new_from_strings(labels)
+
+        # Default selection:
+        # - allow_none -> select the empty row
+        # - otherwise -> select first real row (index 0)
+        self.widget.set_selected(0)
+
+    def get_selected_uuid(self):
+        idx = int(self.widget.get_selected())
+        if idx < 0 or idx >= len(self._uuids):
+            return None
+        return self._uuids[idx]
+
+    def set_selected_uuid(self, uuid_value):
+        # None handling
+        if uuid_value is None:
+            if self.allow_none:
+                self.widget.set_selected(0)
+            return
+
+        try:
+            idx = self._uuids.index(uuid_value)
+        except ValueError:
+            return
+        self.widget.set_selected(idx)
 ITEM_TYPES = [
     ("DATA_ELEMENT", "Data Elements"),
     ("DATA_ELEMENT_CONCEPT", "Data Element Concepts"),
@@ -1871,4 +1922,111 @@ class _ICRow:
     def _on_pressed(self, _gesture, _npress, _x, _y):
         self.win._selected_ic_row = self
 
+def _mdrwindow_refresh_fhir_views(self) -> None:
+    # Curated
+    try:
+        # Update type dropdown choices
+        types = [r[0] for r in self.conn.execute(
+            "SELECT DISTINCT resource_type FROM fhir_curated_resource ORDER BY resource_type"
+        ).fetchall()]
+        if hasattr(self, "fhir_type_dd"):
+            items = ["All"] + [t for t in types if t]
+            self.fhir_type_dd.set_model(Gtk.StringList.new(items))
+            wanted = self.curated_filter.resource_type or "All"
+            try:
+                self.fhir_type_dd.set_selected(items.index(wanted))
+            except ValueError:
+                self.fhir_type_dd.set_selected(0)
+
+        sql, params = build_curated_query(self.curated_filter)
+        rows = self.conn.execute(sql, params).fetchall()
+        self._fhir_views["curated"].remove_all()
+        for r in rows:
+            self._fhir_views["curated"].append(Gtk.StringObject.new(
+                f"{r[0]} | {r[1]} | v={r[2]} | conflict={r[3]} | {r[4]}"
+            ))
+    except Exception as e:
+        self._log(f"FHIR curated view failed: {e}")
+
+    # Conflicts
+    try:
+        rows = self.conn.execute(
+            "SELECT resource_type, canonical_url, artifact_version, variant_count "
+            "FROM v_fhir_artifact_conflicts ORDER BY variant_count DESC LIMIT 500"
+        ).fetchall()
+        self._fhir_views["conflicts"].remove_all()
+        for r in rows:
+            self._fhir_views["conflicts"].append(Gtk.StringObject.new(
+                f"{r[0]} | {r[1]} | v={r[2]} | variants={r[3]}"
+            ))
+    except Exception as e:
+        self._log(f"FHIR conflicts view failed: {e}")
+
+    # Variants
+    try:
+        rows = self.conn.execute(
+            "SELECT c.resource_type, IFNULL(c.canonical_url, c.logical_id) as ident, v.resource_sha256, v.occurrences "
+            "FROM fhir_curated_variant v JOIN fhir_curated_resource c ON c.curated_id=v.curated_id "
+            "ORDER BY v.occurrences DESC LIMIT 500"
+        ).fetchall()
+        self._fhir_views["variants"].remove_all()
+        for r in rows:
+            self._fhir_views["variants"].append(Gtk.StringObject.new(
+                f"{r[0]} | {r[1]} | occ={r[3]} | sha={r[2][:12]}…"
+            ))
+    except Exception as e:
+        self._log(f"FHIR variants view failed: {e}")
+
+    # Runs
+    try:
+        rows = self.conn.execute(
+            "SELECT run_id, started_ts, finished_ts, source_kind, source_name "
+            "FROM fhir_ingest_run ORDER BY run_id DESC LIMIT 200"
+        ).fetchall()
+        self._fhir_views["runs"].remove_all()
+        for r in rows:
+            self._fhir_views["runs"].append(Gtk.StringObject.new(
+                f"run={r[0]} | {r[3]} | {r[4]} | {r[1]} -> {r[2] or ''}"
+            ))
+    except Exception as e:
+        self._log(f"FHIR runs view failed: {e}")
+
+
+def _mdrwindow_update_selected_ui(self) -> None:
+    """Update selected-count label and export button labels (curated multi-select)."""
+    try:
+        idents = []
+        if hasattr(self, "_get_selected_curated_idents"):
+            idents = self._get_selected_curated_idents()  # type: ignore
+        n = len(idents)
+        if hasattr(self, "fhir_selected_lbl"):
+            self.fhir_selected_lbl.set_text(f"Selected: {n}")
+        if hasattr(self, "btn_export_selected_json"):
+            self.btn_export_selected_json.set_label(
+                f"Export Selected JSON… ({n})" if n else "Export Selected JSON…"
+            )
+        if hasattr(self, "btn_export_selected_xml"):
+            self.btn_export_selected_xml.set_label(
+                f"Export Selected XML… ({n})" if n else "Export Selected XML…"
+            )
+    except Exception:
+        # keep UI responsive; selection updates are best-effort
+        pass
+
+
+# ---- Method binding (hotfix for v0.0.x)
+# Some helper functions are defined at module scope; bind them to MDRWindow to ensure
+# instance methods exist even if the file was refactored incorrectly.
+try:
+    MDRWindow._on_filter_changed = _on_filter_changed  # type: ignore[name-defined]
+    MDRWindow._clear_filters = _clear_filters  # type: ignore[name-defined]
+    MDRWindow._get_selected_curated_idents = _get_selected_curated_idents  # type: ignore[name-defined]
+    MDRWindow._get_selected_curated_ident = _get_selected_curated_ident  # type: ignore[name-defined]
+    MDRWindow.export_fhir_selected_json_dialog = export_fhir_selected_json_dialog  # type: ignore[name-defined]
+    MDRWindow.export_fhir_selected_xml_dialog = export_fhir_selected_xml_dialog  # type: ignore[name-defined]
+    MDRWindow._refresh_fhir_views = _mdrwindow_refresh_fhir_views  # type: ignore[name-defined]
+    MDRWindow._update_selected_ui = _mdrwindow_update_selected_ui  # type: ignore[name-defined]
+except Exception:
+    # If something is missing, fail gracefully; UI will surface the error via logs.
+    pass
 
