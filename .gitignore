@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.mypy_cache/
+.venv/
+mdr.sqlite
+*.db
+*.sqlite
+
+__pycache__/
+*.pyc
