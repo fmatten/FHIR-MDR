@@ -1,0 +1,10 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "sd-1",
+  "url": "http://example.org/fhir/StructureDefinition/patient-demo",
+  "version": "1.0.0",
+  "status": "draft",
+  "name": "PatientDemoProfile",
+  "kind": "resource",
+  "type": "Patient"
+}

@@ -1,0 +1,9 @@
+{
+  "resourceType": "Patient",
+  "id": "pat-1",
+  "gender": "female",
+  "meta": {
+    "versionId": "1",
+    "lastUpdated": "2026-01-20T00:00:00Z"
+  }
+}

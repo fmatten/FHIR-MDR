@@ -1,0 +1,7 @@
+{
+  "name": "example.fhir.testpkg",
+  "version": "0.0.1",
+  "fhirVersions": [
+    "4.0.1"
+  ]
+}
