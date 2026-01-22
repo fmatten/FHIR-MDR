@@ -1,26 +1,28 @@
-
-## 2) `tests/test_ingest_conflicts.py`
-
-import os
+import gc
 import json
+import os
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
-import sys
-import time
-import gc
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+
 def run_cli(module: str, args: list[str], cwd: Path) -> subprocess.CompletedProcess:
+    """Run a module as a CLI using the *current* interpreter.
+
+    Using sys.executable makes this cross-platform (Windows has no `python3`).
+    """
     env = os.environ.copy()
     # Ensure repo-root imports work even without installation
     env["PYTHONPATH"] = str(cwd)
-    cmd = [os.environ.get("PYTHON", "python3"), "-m", module, *args]
+    cmd = [sys.executable, "-m", module, *args]
     return subprocess.run(cmd, cwd=str(cwd), env=env, capture_output=True, text=True)
+
 
 def table_exists(conn: sqlite3.Connection, name: str) -> bool:
     row = conn.execute(
@@ -29,34 +31,37 @@ def table_exists(conn: sqlite3.Connection, name: str) -> bool:
     ).fetchone()
     return row is not None
 
+
 def pick_table(conn: sqlite3.Connection, candidates: list[str]) -> str | None:
     for t in candidates:
         if table_exists(conn, t):
             return t
     return None
 
+
 class TestIngestDedupeAndConflicts(unittest.TestCase):
     def setUp(self) -> None:
+        # On Windows, sqlite keeps an exclusive lock while a connection is alive.
+        # TemporaryDirectory cleanup can fail if a handle is still open.
         self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=(sys.platform == "win32"))
         self.tmpdir = Path(self.tmp.name)
         self.db_path = self.tmpdir / "mdr.sqlite"
 
     def tearDown(self) -> None:
-    # On Windows, an open sqlite3 connection locks the DB file and can make
-    # TemporaryDirectory cleanup fail (WinError 32). We force a GC cycle and
-    # retry a few times before giving up.
-    gc.collect()
-    if sys.platform == "win32":
-        for _ in range(10):
-            try:
-                self.tmp.cleanup()
-                return
-            except PermissionError:
-                time.sleep(0.1)
-                gc.collect()
-        # If it still fails, don't fail the test run just due to temp cleanup.
-        return
-    self.tmp.cleanup()
+        # Help GC/finalizers release sqlite file handles deterministically.
+        gc.collect()
+        if sys.platform == "win32":
+            # Retry cleanup briefly to avoid WinError 32 from lingering handles.
+            for _ in range(10):
+                try:
+                    self.tmp.cleanup()
+                    return
+                except PermissionError:
+                    time.sleep(0.1)
+                    gc.collect()
+            # Don't fail the whole suite just because temp cleanup is racing.
+            return
+        self.tmp.cleanup()
 
     def _make_bundle_json(self, canonical: str, version: str, name: str) -> Path:
         bundle = {
@@ -66,7 +71,7 @@ class TestIngestDedupeAndConflicts(unittest.TestCase):
                 {
                     "resource": {
                         "resourceType": "StructureDefinition",
-                        "id": "sd-1",
+                        "id": f"sd-{name.lower()}",
                         "url": canonical,
                         "version": version,
                         "name": name,
@@ -80,7 +85,8 @@ class TestIngestDedupeAndConflicts(unittest.TestCase):
                 }
             ],
         }
-        p = self.tmpdir / f"bundle_{version}.json"
+        # Unique filename in case multiple tests reuse same version
+        p = self.tmpdir / f"bundle_{name}_{version}_{int(time.time()*1000)}.json"
         p.write_text(json.dumps(bundle, indent=2), encoding="utf-8")
         return p
 
@@ -99,7 +105,7 @@ class TestIngestDedupeAndConflicts(unittest.TestCase):
   </entry>
 </Bundle>
 """
-        p = self.tmpdir / "bundle.xml"
+        p = self.tmpdir / f"bundle_{int(time.time()*1000)}.xml"
         p.write_text(xml, encoding="utf-8")
         return p
 
@@ -122,7 +128,7 @@ class TestIngestDedupeAndConflicts(unittest.TestCase):
         self.assertEqual(cp.returncode, 0, msg=f"STDOUT:\n{cp.stdout}\nSTDERR:\n{cp.stderr}")
 
         with self._open() as conn:
-            curated = pick_table(conn, ["fhir_curated", "fhir_curated_artifact", "fhir_curated_resource"])
+            curated = pick_table(conn, ["fhir_curated_resource", "fhir_curated_artifact", "fhir_curated"])
             self.assertIsNotNone(curated, "Could not find curated table (expected something like fhir_curated).")
             n = conn.execute(f"SELECT COUNT(*) AS c FROM {curated}").fetchone()["c"]
             self.assertGreaterEqual(n, 1)
@@ -137,7 +143,7 @@ class TestIngestDedupeAndConflicts(unittest.TestCase):
         self.assertEqual(cp.returncode, 0, msg=f"STDOUT:\n{cp.stdout}\nSTDERR:\n{cp.stderr}")
 
         with self._open() as conn:
-            curated = pick_table(conn, ["fhir_curated", "fhir_curated_artifact", "fhir_curated_resource"])
+            curated = pick_table(conn, ["fhir_curated_resource", "fhir_curated_artifact", "fhir_curated"])
             self.assertIsNotNone(curated)
             n = conn.execute(f"SELECT COUNT(*) AS c FROM {curated}").fetchone()["c"]
             self.assertGreaterEqual(n, 1)
@@ -145,7 +151,7 @@ class TestIngestDedupeAndConflicts(unittest.TestCase):
     def test_conflict_same_canonical_different_bytes(self) -> None:
         canonical = "http://example.org/fhir/StructureDefinition/conflict"
         b1 = self._make_bundle_json(canonical, "1.0.0", "ConflictA")
-        b2 = self._make_bundle_json(canonical, "1.0.1", "ConflictB")
+        b2 = self._make_bundle_json(canonical, "1.0.0", "ConflictB")
 
         cp1 = run_cli("mdr_gtk.scripts.import_fhir_bundle", ["--db", str(self.db_path), str(b1)], REPO_ROOT)
         self.assertEqual(cp1.returncode, 0, msg=f"STDOUT:\n{cp1.stdout}\nSTDERR:\n{cp1.stderr}")
@@ -156,12 +162,14 @@ class TestIngestDedupeAndConflicts(unittest.TestCase):
         self.assertEqual(cp2.returncode, 0, msg=f"STDOUT:\n{cp2.stdout}\nSTDERR:\n{cp2.stderr}")
 
         with self._open() as conn:
-            curated = pick_table(conn, ["fhir_curated", "fhir_curated_artifact", "fhir_curated_resource"])
+            curated = pick_table(conn, ["fhir_curated_resource", "fhir_curated_artifact", "fhir_curated"])
             self.assertIsNotNone(curated)
 
             cols = [r["name"] for r in conn.execute(f"PRAGMA table_info({curated})").fetchall()]
             if "canonical_url" not in cols or "has_conflict" not in cols:
-                self.skipTest(f"Curated table {curated} does not expose canonical_url/has_conflict columns (cols={cols})")
+                self.skipTest(
+                    f"Curated table {curated} does not expose canonical_url/has_conflict columns (cols={cols})"
+                )
 
             row = conn.execute(
                 f"SELECT canonical_url, has_conflict FROM {curated} WHERE canonical_url=?",
@@ -191,11 +199,13 @@ class TestIngestDedupeAndConflicts(unittest.TestCase):
         self.assertEqual(cp2.returncode, 0, msg=f"STDOUT:\n{cp2.stdout}\nSTDERR:\n{cp2.stderr}")
 
         with self._open() as conn:
-            curated = pick_table(conn, ["fhir_curated", "fhir_curated_artifact", "fhir_curated_resource"])
+            curated = pick_table(conn, ["fhir_curated_resource", "fhir_curated_artifact", "fhir_curated"])
             self.assertIsNotNone(curated)
             cols = [r["name"] for r in conn.execute(f"PRAGMA table_info({curated})").fetchall()]
             if "last_seen_ts" not in cols or "canonical_url" not in cols:
-                self.skipTest(f"Curated table {curated} does not expose last_seen_ts/canonical_url columns (cols={cols})")
+                self.skipTest(
+                    f"Curated table {curated} does not expose last_seen_ts/canonical_url columns (cols={cols})"
+                )
 
             rows = conn.execute(
                 f"SELECT canonical_url, last_seen_ts FROM {curated} ORDER BY last_seen_ts DESC LIMIT 2"
