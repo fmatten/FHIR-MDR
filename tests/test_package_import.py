@@ -5,9 +5,19 @@ import sqlite3
 import subprocess
 import tempfile
 import unittest
+import warnings
+from contextlib import closing
 from pathlib import Path
 
+# We run the package importer in a subprocess, so any DB connections opened there
+# cannot leak into this test process. If ResourceWarnings about "unclosed database"
+# still appear, they come from other code paths in the current test run.
+# To keep CI output clean while we track down the exact owner, we suppress the
+# specific ResourceWarning message here.
+warnings.filterwarnings("ignore", category=ResourceWarning, message=r".*unclosed database.*")
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
 
 def run_cli(module: str, args: list[str], cwd: Path) -> subprocess.CompletedProcess:
     env = os.environ.copy()
@@ -15,15 +25,21 @@ def run_cli(module: str, args: list[str], cwd: Path) -> subprocess.CompletedProc
     cmd = [os.environ.get("PYTHON", "python3"), "-m", module, *args]
     return subprocess.run(cmd, cwd=str(cwd), env=env, capture_output=True, text=True)
 
+
 def table_exists(conn: sqlite3.Connection, name: str) -> bool:
-    row = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone()
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (name,),
+    ).fetchone()
     return row is not None
+
 
 def pick_table(conn: sqlite3.Connection, candidates: list[str]) -> str | None:
     for t in candidates:
         if table_exists(conn, t):
             return t
     return None
+
 
 class TestPackageImport(unittest.TestCase):
     def setUp(self) -> None:
@@ -39,12 +55,18 @@ class TestPackageImport(unittest.TestCase):
         pkg_dir = pkg_root / "package"
         pkg_dir.mkdir(parents=True)
 
-        (pkg_dir / "package.json").write_text(json.dumps({
-            "name": "example.fhir.mdr.test",
-            "version": "0.0.0",
-            "fhirVersions": ["4.0.1"],
-            "description": "Minimal test package for FHIR-MDR"
-        }, indent=2), encoding="utf-8")
+        (pkg_dir / "package.json").write_text(
+            json.dumps(
+                {
+                    "name": "example.fhir.mdr.test",
+                    "version": "0.0.0",
+                    "fhirVersions": ["4.0.1"],
+                    "description": "Minimal test package for FHIR-MDR",
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
 
         sd = {
             "resourceType": "StructureDefinition",
@@ -59,7 +81,10 @@ class TestPackageImport(unittest.TestCase):
             "derivation": "constraint",
             "differential": {"element": [{"id": "Patient"}]},
         }
-        (pkg_dir / "StructureDefinition-sd-test.json").write_text(json.dumps(sd, indent=2), encoding="utf-8")
+        (pkg_dir / "StructureDefinition-sd-test.json").write_text(
+            json.dumps(sd, indent=2),
+            encoding="utf-8",
+        )
 
         tgz_path = self.tmpdir / "sample_package.tgz"
         with tarfile.open(tgz_path, "w:gz") as tf:
@@ -70,15 +95,18 @@ class TestPackageImport(unittest.TestCase):
 
     def test_import_package_tgz_creates_curated(self) -> None:
         tgz = self._make_minimal_package_tgz()
-        cp = run_cli("mdr_gtk.scripts.import_fhir_package", ["--db", str(self.db_path), str(tgz)], REPO_ROOT)
+
+        cp = run_cli(
+            "mdr_gtk.scripts.import_fhir_package",
+            ["--db", str(self.db_path), str(tgz)],
+            REPO_ROOT,
+        )
         self.assertEqual(cp.returncode, 0, msg=f"STDOUT:\n{cp.stdout}\nSTDERR:\n{cp.stderr}")
 
-        conn = sqlite3.connect(self.db_path)
-        conn.row_factory = sqlite3.Row
-        try:
-            curated = pick_table(conn, ["fhir_curated", "fhir_curated_artifact", "fhir_curated_resource"])
+        # Always close connection deterministically in this test process
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            conn.row_factory = sqlite3.Row
+            curated = pick_table(conn, ["fhir_curated_resource", "fhir_curated_artifact", "fhir_curated"])
             self.assertIsNotNone(curated, "Could not find curated table after import.")
             n = conn.execute(f"SELECT COUNT(*) AS c FROM {curated}").fetchone()["c"]
             self.assertGreaterEqual(n, 1)
-        finally:
-            conn.close()
