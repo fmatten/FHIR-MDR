@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import warnings
 import unittest
 from pathlib import Path
 from contextlib import closing
@@ -50,7 +51,9 @@ class TestIngestDedupeAndConflicts(unittest.TestCase):
 
     def tearDown(self) -> None:
         # Help GC/finalizers release sqlite file handles deterministically.
-        gc.collect()
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', ResourceWarning)
+            gc.collect()
         if sys.platform == "win32":
             # Retry cleanup briefly to avoid WinError 32 from lingering handles.
             for _ in range(10):
