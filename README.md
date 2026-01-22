@@ -68,6 +68,17 @@ python3 -m mdr_gtk.scripts.import_fhir_package_dir --db mdr.sqlite path/to/packa
 # Import a FHIR bundle (JSON or XML)
 python3 -m mdr_gtk.scripts.import_fhir_bundle --db mdr.sqlite path/to/bundle.json
 python3 -m mdr_gtk.scripts.import_fhir_bundle --db mdr.sqlite path/to/bundle.xml
+
+### Import (FHIR conformance artefacts)
+
+Import a FHIR Bundle (JSON or XML):
+
+python3 -m mdr_gtk.scripts.import_fhir_bundle --db mdr.sqlite examples/bundle.json
+python3 -m mdr_gtk.scripts.import_fhir_bundle --db mdr.sqlite examples/bundle.xml
+
+### Import an FHIR package archive (.tgz):
+
+python3 -m mdr_gtk.scripts.import_fhir_package --db mdr.sqlite path/to/package.tgz
 ```
 
 ## Search/Filter (Curated view)
