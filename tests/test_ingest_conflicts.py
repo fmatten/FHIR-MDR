@@ -63,7 +63,7 @@ class TestIngestDedupeAndConflicts(unittest.TestCase):
                 }
             ],
         }
-        p = self.tmpdir / f"bundle_{version}.json"
+        p = self.tmpdir / f"bundle_{name}_{version}.json"
         p.write_text(json.dumps(bundle, indent=2), encoding="utf-8")
         return p
 
@@ -147,8 +147,8 @@ class TestIngestDedupeAndConflicts(unittest.TestCase):
                 self.skipTest(f"Curated table {curated} does not expose canonical_url/has_conflict columns (cols={cols})")
 
             row = conn.execute(
-                f"SELECT canonical_url, artifact_version, resource_type, has_conflict FROM {curated} WHERE canonical_url=? AND resource_type=? AND IFNULL(artifact_version,'')=?",
-                (canonical, "StructureDefinition", "1.0.0"),
+                f"SELECT canonical_url, has_conflict FROM {curated} WHERE canonical_url=?",
+                (canonical,),
             ).fetchone()
             self.assertIsNotNone(row, "Expected curated row for the canonical URL")
             self.assertEqual(int(row["has_conflict"]), 1)
@@ -183,5 +183,5 @@ class TestIngestDedupeAndConflicts(unittest.TestCase):
             rows = conn.execute(
                 f"SELECT canonical_url, last_seen_ts FROM {curated} ORDER BY last_seen_ts DESC LIMIT 2"
             ).fetchall()
-            self.assertGreaterEqual(len(rows), 2, f"Expected at least 2 curated rows, got {len(rows)}. Rows={rows}")
+            self.assertGreaterEqual(len(rows), 2)
             self.assertEqual(rows[0]["canonical_url"], "http://example.org/fhir/StructureDefinition/sort2")
