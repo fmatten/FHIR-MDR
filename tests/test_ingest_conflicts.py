@@ -1,6 +1,6 @@
 
 ## 2) `tests/test_ingest_conflicts.py`
-```python
+
 import os
 import json
 import sqlite3
@@ -49,7 +49,7 @@ class TestIngestDedupeAndConflicts(unittest.TestCase):
                 {
                     "resource": {
                         "resourceType": "StructureDefinition",
-                        "id": "sd-1",
+                        "id": f"sd-{name.lower()}",
                         "url": canonical,
                         "version": version,
                         "name": name,
@@ -128,7 +128,7 @@ class TestIngestDedupeAndConflicts(unittest.TestCase):
     def test_conflict_same_canonical_different_bytes(self) -> None:
         canonical = "http://example.org/fhir/StructureDefinition/conflict"
         b1 = self._make_bundle_json(canonical, "1.0.0", "ConflictA")
-        b2 = self._make_bundle_json(canonical, "1.0.1", "ConflictB")
+        b2 = self._make_bundle_json(canonical, "1.0.01.0.0", "ConflictB")
 
         cp1 = run_cli("mdr_gtk.scripts.import_fhir_bundle", ["--db", str(self.db_path), str(b1)], REPO_ROOT)
         self.assertEqual(cp1.returncode, 0, msg=f"STDOUT:\n{cp1.stdout}\nSTDERR:\n{cp1.stderr}")
