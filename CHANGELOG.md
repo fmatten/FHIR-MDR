@@ -10,5 +10,20 @@
 
 
 
+## v0.0.3 - 2026-01-22
+
+### Added
+- FHIR Bundle XML import support (CLI + ingest layer).
+- XML bundle parsing for conformance artefacts (Bundle.entry.resource.*).
+
+### Changed
+- Import CLI now auto-detects JSON vs XML bundles and routes to the correct importer.
+- Test suite extended to cover JSON + XML bundle import, conflict detection, and `last_seen_ts` sorting.
+
+### Fixed
+- Stabilized ingest tests (unique test bundle filenames/IDs) to prevent accidental overwrites during test runs.
+
+
+
 ## v0.0.2
 - Fix GUI startup: restore missing _RefDropDown helper
