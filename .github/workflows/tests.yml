@@ -24,7 +24,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      # Optional (nur Linux): GTK/GI Pakete, damit GUI-Smoke-Imports nicht fliegen
+      # Linux: install GI/GTK4 so GUI smoke tests can run (or at least import gi)
       - name: Install system deps (Linux)
         if: runner.os == 'Linux'
         run: |
