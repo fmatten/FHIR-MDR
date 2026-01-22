@@ -105,7 +105,7 @@ class TestIngestDedupeAndConflicts(unittest.TestCase):
         self.assertEqual(cp.returncode, 0, msg=f"STDOUT:\n{cp.stdout}\nSTDERR:\n{cp.stderr}")
 
         with self._open() as conn:
-            curated = pick_table(conn, ["fhir_curated", "fhir_curated_artifact", "fhir_curated_resource"])
+            curated = pick_table(conn, ["fhir_curated_resource", "fhir_curated_artifact", "fhir_curated"])
             self.assertIsNotNone(curated, "Could not find curated table (expected something like fhir_curated).")
             n = conn.execute(f"SELECT COUNT(*) AS c FROM {curated}").fetchone()["c"]
             self.assertGreaterEqual(n, 1)
@@ -120,7 +120,7 @@ class TestIngestDedupeAndConflicts(unittest.TestCase):
         self.assertEqual(cp.returncode, 0, msg=f"STDOUT:\n{cp.stdout}\nSTDERR:\n{cp.stderr}")
 
         with self._open() as conn:
-            curated = pick_table(conn, ["fhir_curated", "fhir_curated_artifact", "fhir_curated_resource"])
+            curated = pick_table(conn, ["fhir_curated_resource", "fhir_curated_artifact", "fhir_curated"])
             self.assertIsNotNone(curated)
             n = conn.execute(f"SELECT COUNT(*) AS c FROM {curated}").fetchone()["c"]
             self.assertGreaterEqual(n, 1)
@@ -128,7 +128,7 @@ class TestIngestDedupeAndConflicts(unittest.TestCase):
     def test_conflict_same_canonical_different_bytes(self) -> None:
         canonical = "http://example.org/fhir/StructureDefinition/conflict"
         b1 = self._make_bundle_json(canonical, "1.0.0", "ConflictA")
-        b2 = self._make_bundle_json(canonical, "1.0.01.0.0", "ConflictB")
+        b2 = self._make_bundle_json(canonical, "1.0.0", "ConflictB")
 
         cp1 = run_cli("mdr_gtk.scripts.import_fhir_bundle", ["--db", str(self.db_path), str(b1)], REPO_ROOT)
         self.assertEqual(cp1.returncode, 0, msg=f"STDOUT:\n{cp1.stdout}\nSTDERR:\n{cp1.stderr}")
@@ -139,7 +139,7 @@ class TestIngestDedupeAndConflicts(unittest.TestCase):
         self.assertEqual(cp2.returncode, 0, msg=f"STDOUT:\n{cp2.stdout}\nSTDERR:\n{cp2.stderr}")
 
         with self._open() as conn:
-            curated = pick_table(conn, ["fhir_curated", "fhir_curated_artifact", "fhir_curated_resource"])
+            curated = pick_table(conn, ["fhir_curated_resource", "fhir_curated_artifact", "fhir_curated"])
             self.assertIsNotNone(curated)
 
             cols = [r["name"] for r in conn.execute(f"PRAGMA table_info({curated})").fetchall()]
@@ -147,8 +147,8 @@ class TestIngestDedupeAndConflicts(unittest.TestCase):
                 self.skipTest(f"Curated table {curated} does not expose canonical_url/has_conflict columns (cols={cols})")
 
             row = conn.execute(
-                f"SELECT canonical_url, has_conflict FROM {curated} WHERE canonical_url=?",
-                (canonical,),
+                f"SELECT canonical_url, artifact_version, resource_type, has_conflict FROM {curated} WHERE canonical_url=? AND resource_type=? AND IFNULL(artifact_version,'')=?",
+                (canonical, "StructureDefinition", "1.0.0"),
             ).fetchone()
             self.assertIsNotNone(row, "Expected curated row for the canonical URL")
             self.assertEqual(int(row["has_conflict"]), 1)
@@ -174,7 +174,7 @@ class TestIngestDedupeAndConflicts(unittest.TestCase):
         self.assertEqual(cp2.returncode, 0, msg=f"STDOUT:\n{cp2.stdout}\nSTDERR:\n{cp2.stderr}")
 
         with self._open() as conn:
-            curated = pick_table(conn, ["fhir_curated", "fhir_curated_artifact", "fhir_curated_resource"])
+            curated = pick_table(conn, ["fhir_curated_resource", "fhir_curated_artifact", "fhir_curated"])
             self.assertIsNotNone(curated)
             cols = [r["name"] for r in conn.execute(f"PRAGMA table_info({curated})").fetchall()]
             if "last_seen_ts" not in cols or "canonical_url" not in cols:
@@ -183,5 +183,5 @@ class TestIngestDedupeAndConflicts(unittest.TestCase):
             rows = conn.execute(
                 f"SELECT canonical_url, last_seen_ts FROM {curated} ORDER BY last_seen_ts DESC LIMIT 2"
             ).fetchall()
-            self.assertGreaterEqual(len(rows), 2)
+            self.assertGreaterEqual(len(rows), 2, f"Expected at least 2 curated rows, got {len(rows)}. Rows={rows}")
             self.assertEqual(rows[0]["canonical_url"], "http://example.org/fhir/StructureDefinition/sort2")
