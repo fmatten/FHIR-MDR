@@ -8,6 +8,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from contextlib import closing
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -127,7 +128,7 @@ class TestIngestDedupeAndConflicts(unittest.TestCase):
         )
         self.assertEqual(cp.returncode, 0, msg=f"STDOUT:\n{cp.stdout}\nSTDERR:\n{cp.stderr}")
 
-        with self._open() as conn:
+        with closing(self._open()) as conn:
             curated = pick_table(conn, ["fhir_curated_resource", "fhir_curated_artifact", "fhir_curated"])
             self.assertIsNotNone(curated, "Could not find curated table (expected something like fhir_curated).")
             n = conn.execute(f"SELECT COUNT(*) AS c FROM {curated}").fetchone()["c"]
@@ -142,7 +143,7 @@ class TestIngestDedupeAndConflicts(unittest.TestCase):
         )
         self.assertEqual(cp.returncode, 0, msg=f"STDOUT:\n{cp.stdout}\nSTDERR:\n{cp.stderr}")
 
-        with self._open() as conn:
+        with closing(self._open()) as conn:
             curated = pick_table(conn, ["fhir_curated_resource", "fhir_curated_artifact", "fhir_curated"])
             self.assertIsNotNone(curated)
             n = conn.execute(f"SELECT COUNT(*) AS c FROM {curated}").fetchone()["c"]
@@ -161,7 +162,7 @@ class TestIngestDedupeAndConflicts(unittest.TestCase):
         cp2 = run_cli("mdr_gtk.scripts.import_fhir_bundle", ["--db", str(self.db_path), str(b2)], REPO_ROOT)
         self.assertEqual(cp2.returncode, 0, msg=f"STDOUT:\n{cp2.stdout}\nSTDERR:\n{cp2.stderr}")
 
-        with self._open() as conn:
+        with closing(self._open()) as conn:
             curated = pick_table(conn, ["fhir_curated_resource", "fhir_curated_artifact", "fhir_curated"])
             self.assertIsNotNone(curated)
 
@@ -198,7 +199,7 @@ class TestIngestDedupeAndConflicts(unittest.TestCase):
         cp2 = run_cli("mdr_gtk.scripts.import_fhir_bundle", ["--db", str(self.db_path), str(b2)], REPO_ROOT)
         self.assertEqual(cp2.returncode, 0, msg=f"STDOUT:\n{cp2.stdout}\nSTDERR:\n{cp2.stderr}")
 
-        with self._open() as conn:
+        with closing(self._open()) as conn:
             curated = pick_table(conn, ["fhir_curated_resource", "fhir_curated_artifact", "fhir_curated"])
             self.assertIsNotNone(curated)
             cols = [r["name"] for r in conn.execute(f"PRAGMA table_info({curated})").fetchall()]
