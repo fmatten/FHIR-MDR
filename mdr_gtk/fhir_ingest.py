@@ -414,3 +414,173 @@ def import_fhir_package(
     except Exception as e:
         conn.rollback()
         return ImportResult(False, f"Package import failed: {e}", run_id=run_id, raw_count=0)
+# --- XML support (Bundle import) ---------------------------------------------
+import xml.etree.ElementTree as ET
+
+FHIR_NS = "http://hl7.org/fhir"
+
+
+def _ln(tag: str) -> str:
+    """Localname of an XML tag."""
+    if "}" in tag:
+        return tag.split("}", 1)[1]
+    return tag
+
+
+def _find_child(elem: Optional[ET.Element], name: str) -> Optional[ET.Element]:
+    """Find first child with localname == name (FHIR namespace tolerant)."""
+    if elem is None:
+        return None
+    for ch in list(elem):
+        if _ln(ch.tag) == name:
+            return ch
+    return None
+
+
+def _attr_value(elem: Optional[ET.Element]) -> Optional[str]:
+    """FHIR XML uses value=... for primitives."""
+    if elem is None:
+        return None
+    v = elem.attrib.get("value")
+    return v if isinstance(v, str) else None
+
+
+def _extract_resource_fields_from_xml(
+    res_elem: ET.Element,
+) -> tuple[str, Optional[str], Optional[str], Optional[str], Optional[str], Optional[str]]:
+    """
+    Return (resource_type, logical_id, canonical_url, artifact_version, meta_version_id, meta_last_updated)
+    from a FHIR XML resource element.
+    """
+    rt = _ln(res_elem.tag)
+
+    logical_id = _attr_value(_find_child(res_elem, "id"))
+    canonical_url = _attr_value(_find_child(res_elem, "url"))
+    artifact_version = _attr_value(_find_child(res_elem, "version"))
+
+    meta = _find_child(res_elem, "meta")
+    meta_version_id = _attr_value(_find_child(meta, "versionId")) if meta is not None else None
+    meta_last_updated = _attr_value(_find_child(meta, "lastUpdated")) if meta is not None else None
+
+    return rt, logical_id, canonical_url, artifact_version, meta_version_id, meta_last_updated
+
+
+def iter_xml_bundle_resources(xml_text: str) -> Iterable[tuple[Optional[str], ET.Element, str]]:
+    """
+    Yield (full_url, resource_element, resource_xml_text) for each Bundle.entry.resource.<X>.
+    """
+    root = ET.fromstring(xml_text)
+
+    if _ln(root.tag) != "Bundle":
+        return
+
+    # Bundle.entry is namespaced
+    for entry in root.findall(f".//{{{FHIR_NS}}}entry"):
+        full_url = _attr_value(_find_child(entry, "fullUrl"))
+        res_container = _find_child(entry, "resource")
+        if res_container is None:
+            continue
+
+        children = list(res_container)
+        if not children:
+            continue
+        res_elem = children[0]
+
+        res_xml = ET.tostring(res_elem, encoding="unicode")
+        yield full_url, res_elem, res_xml
+
+
+def import_fhir_bundle_xml(
+    conn: sqlite3.Connection,
+    xml_text: str,
+    *,
+    source_name: str = "bundle-xml",
+    partition_key: Optional[str] = None,
+    extract_references: bool = True,
+) -> ImportResult:
+    """
+    Import a FHIR Bundle from XML text.
+    Stores raw resource payload as XML string in fhir_raw_resource.resource_json.
+    Reference extraction for XML is currently skipped (future enhancement).
+    """
+    if not isinstance(xml_text, str) or not xml_text.strip():
+        return ImportResult(False, "Empty XML input")
+
+    run_id = _new_run(conn, source_name=source_name, source_kind="bundle", partition_key=partition_key)
+    try:
+        # Best-effort bundle_type extraction
+        bundle_type = "collection"
+        try:
+            root = ET.fromstring(xml_text)
+            if _ln(root.tag) == "Bundle":
+                bt = _attr_value(_find_child(root, "type"))
+                if bt:
+                    bundle_type = bt
+        except Exception:
+            bundle_type = "collection"
+
+        bsha = sha256_text(xml_text.strip())
+        cur = conn.execute(
+            "INSERT INTO fhir_raw_bundle(run_id, bundle_type, bundle_sha256, bundle_json) VALUES (?,?,?,?)",
+            (run_id, bundle_type, bsha, xml_text),
+        )
+        bundle_id = int(cur.lastrowid)
+
+        raw_n = 0
+
+        for full_url, res_elem, res_xml in iter_xml_bundle_resources(xml_text):
+            rt, logical_id, canonical_url, artifact_version, meta_version_id, meta_last_updated = _extract_resource_fields_from_xml(res_elem)
+            if not rt:
+                continue
+
+            sha = sha256_text(res_xml.strip())
+
+            cur = conn.execute(
+                """INSERT INTO fhir_raw_resource(
+                    run_id, bundle_id, full_url,
+                    resource_type, logical_id, canonical_url, artifact_version,
+                    meta_version_id, meta_last_updated,
+                    resource_sha256, resource_json
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    run_id, bundle_id, full_url,
+                    rt, logical_id, canonical_url, artifact_version,
+                    meta_version_id, meta_last_updated,
+                    sha, res_xml,
+                ),
+            )
+            raw_id = int(cur.lastrowid)
+
+            key = _identity_key(rt, logical_id, canonical_url, artifact_version, partition_key)
+            found = _find_curated(conn, key)
+
+            if found:
+                curated_id, current_sha = int(found[0]), found[1]
+                _upsert_variant(conn, curated_id, sha, run_id)
+                if current_sha != sha:
+                    conn.execute("UPDATE fhir_curated_resource SET has_conflict=1 WHERE curated_id=?", (curated_id,))
+                conn.execute(
+                    "UPDATE fhir_curated_resource SET last_seen_ts=(strftime('%Y-%m-%dT%H:%M:%fZ','now')) WHERE curated_id=?",
+                    (curated_id,),
+                )
+            else:
+                curated_id = _create_curated(conn, rt, logical_id, canonical_url, artifact_version, partition_key, sha)
+                conn.execute(
+                    "INSERT INTO fhir_curated_variant(curated_id, resource_sha256, occurrences, first_seen_run_id, last_seen_run_id) VALUES (?,?,?,?,?)",
+                    (curated_id, sha, 1, run_id, run_id),
+                )
+
+            conn.execute(
+                "INSERT OR REPLACE INTO fhir_raw_to_curated(raw_id, curated_id) VALUES (?,?)",
+                (raw_id, curated_id),
+            )
+
+            raw_n += 1
+
+        conn.commit()
+        _finish_run(conn, run_id)
+        return ImportResult(True, f"Imported FHIR Bundle XML: run_id={run_id}, resources={raw_n}", run_id=run_id, raw_count=raw_n)
+
+    except Exception as e:
+        conn.rollback()
+        return ImportResult(False, f"Import failed: {e}", run_id=run_id, raw_count=0)
