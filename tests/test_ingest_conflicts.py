@@ -9,6 +9,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+import sys
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -16,7 +17,7 @@ def run_cli(module: str, args: list[str], cwd: Path) -> subprocess.CompletedProc
     env = os.environ.copy()
     # Ensure repo-root imports work even without installation
     env["PYTHONPATH"] = str(cwd)
-    cmd = [os.environ.get("PYTHON", "python3"), "-m", module, *args]
+    cmd = [os.environ.get("PYTHON", sys.executable), "-m", module, *args]
     return subprocess.run(cmd, cwd=str(cwd), env=env, capture_output=True, text=True)
 
 def table_exists(conn: sqlite3.Connection, name: str) -> bool:

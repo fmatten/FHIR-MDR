@@ -8,6 +8,7 @@ import unittest
 import warnings
 from contextlib import closing
 from pathlib import Path
+import sys
 
 # We run the package importer in a subprocess, so any DB connections opened there
 # cannot leak into this test process. If ResourceWarnings about "unclosed database"
@@ -22,7 +23,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 def run_cli(module: str, args: list[str], cwd: Path) -> subprocess.CompletedProcess:
     env = os.environ.copy()
     env["PYTHONPATH"] = str(cwd)
-    cmd = [os.environ.get("PYTHON", "python3"), "-m", module, *args]
+    cmd = [os.environ.get("PYTHON", sys.executable), "-m", module, *args]
     return subprocess.run(cmd, cwd=str(cwd), env=env, capture_output=True, text=True)
 
 
