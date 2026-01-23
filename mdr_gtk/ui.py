@@ -8,6 +8,7 @@ import csv
 from pathlib import Path
 
 from mdr_gtk.db import connect
+from mdr_gtk.services import ensure_schema_applied
 from mdr_gtk.repositories import Repo, new_uuid
 import json
 from pathlib import Path
@@ -86,19 +87,9 @@ ITEM_TYPES = [
 
 
 class MDRWindow(Gtk.ApplicationWindow):
-    def _ensure_schema(self) -> None:
-        # Apply schema if not present (MDR + FHIR)
-        row = self.conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='reg'").fetchone()
-        if row is None:
-            self.conn.executescript(read_text("migrations/schema.sql"))
-            self.conn.commit()
-        row2 = self.conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='fhir_ingest_run'").fetchone()
-        if row2 is None:
-            self.conn.executescript(read_text("migrations/schema.sql"))
-            self.conn.commit()
-
 
     def __init__(self, app: Gtk.Application, db_path: str, use_adwaita: bool = False):
+        # Note: Gtk.ApplicationWindow must be initialized via keyword properties.
         super().__init__(application=app, title="ISO/IEC 11179 MDR (SQLite) – Core+")
         self.set_default_size(1200, 740)
 
@@ -119,7 +110,11 @@ class MDRWindow(Gtk.ApplicationWindow):
             self.conn.close()
         except Exception:
             pass
-        super().close()
+        return super().close()
+
+    def _ensure_schema(self) -> None:
+        # Apply schema if not present (MDR + FHIR)
+        ensure_schema_applied(self.conn)
 
     def _build_ui(self):
         hb = Gtk.HeaderBar()

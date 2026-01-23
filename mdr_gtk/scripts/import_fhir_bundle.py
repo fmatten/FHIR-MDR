@@ -11,14 +11,7 @@ from mdr_gtk.fhir_ingest import import_fhir_bundle_json
 from mdr_gtk.util import read_text
 
 
-def ensure_schema_applied(conn) -> None:
-    """Auto-apply schema if FHIR tables are missing (makes CLI usage foolproof)."""
-    row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='fhir_ingest_run'"
-    ).fetchone()
-    if row is None:
-        conn.executescript(read_text("migrations/schema.sql"))
-        conn.commit()
+from mdr_gtk.services import ensure_schema_applied
 
 
 def _detect_xml(bundle_path: Path, text: str) -> bool:

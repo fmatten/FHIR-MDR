@@ -9,16 +9,8 @@ from mdr_gtk.db import connect
 from mdr_gtk.fhir_ingest import import_fhir_package
 
 
-from mdr_gtk.util import read_text
+from mdr_gtk.services import ensure_schema_applied
 
-def ensure_schema_applied(conn) -> None:
-    """Auto-apply schema if FHIR tables are missing (makes CLI usage foolproof)."""
-    row = conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='fhir_ingest_run'"
-    ).fetchone()
-    if row is None:
-        conn.executescript(read_text("migrations/schema.sql"))
-        conn.commit()
 
 def main() -> None:
     p = argparse.ArgumentParser()
