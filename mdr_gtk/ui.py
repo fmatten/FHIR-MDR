@@ -9,6 +9,7 @@ from pathlib import Path
 
 from mdr_gtk.db import connect
 from mdr_gtk.services import ensure_schema_applied
+from mdr_gtk.gui_services import GUIServiceFacade
 from mdr_gtk.repositories import Repo, new_uuid
 import json
 from pathlib import Path
@@ -94,9 +95,13 @@ class MDRWindow(Gtk.ApplicationWindow):
         self.set_default_size(1200, 740)
 
         self.conn = connect(db_path)
-        self._ensure_schema()
-        self.repo = Repo(self.conn)
         self.db_path = db_path
+
+        # Service facade centralizes schema ensure and file/DB actions (testable without GTK)
+        self.services = GUIServiceFacade(self.conn)
+        self.services.ensure_schema()
+
+        self.repo = Repo(self.conn)
 
         self.current_type = ITEM_TYPES[0][0]
         self.current_uuid: str | None = None
@@ -113,7 +118,20 @@ class MDRWindow(Gtk.ApplicationWindow):
         return super().close()
 
     def _ensure_schema(self) -> None:
-        # Apply schema if not present (MDR + FHIR)
+        """Backwards-compatible wrapper used by older callbacks/tests.
+
+        Prefer calling `self.services.ensure_schema()` where possible.
+        """
+        try:
+            # If services is already constructed, delegate.
+            svc = getattr(self, "services", None)
+            if svc is not None:
+                svc.ensure_schema()
+                return
+        except Exception:
+            pass
+
+        # Fallback (early init / safety)
         ensure_schema_applied(self.conn)
 
     def _build_ui(self):
@@ -223,10 +241,10 @@ class MDRWindow(Gtk.ApplicationWindow):
         grid = Gtk.Grid(column_spacing=12, row_spacing=10)
         self.detail.append(grid)
 
-        def add_row(r: int, label: str, widget: Gtk.Widget):
-            l = Gtk.Label(label=label, xalign=0)
-            grid.attach(l, 0, r, 1, 1)
-            grid.attach(widget, 1, r, 1, 1)
+    def add_row(r: int, label: str, widget: Gtk.Widget):
+        l = Gtk.Label(label=label, xalign=0)
+        grid.attach(l, 0, r, 1, 1)
+        grid.attach(widget, 1, r, 1, 1)
 
         self.f_uuid = Gtk.Entry()
         self.f_uuid.set_editable(False)
@@ -1552,8 +1570,7 @@ def _update_selected_ui(self) -> None:
                 if f:
                     path = f.get_path()
                     try:
-                        obj = json.loads(Path(path).read_text(encoding="utf-8"))
-                        res = import_fhir_bundle_json(self.conn, obj, source_name=f"file:{Path(path).name}")
+                        res = self.services.import_fhir_bundle_json_file(path, source_name=f"file:{Path(path).name}")
                         self._log(res.message)
                         self._refresh_fhir_views()
                     except Exception as e:
@@ -1574,7 +1591,7 @@ def _update_selected_ui(self) -> None:
                 if f:
                     path = f.get_path()
                     try:
-                        res = import_fhir_package(self.conn, path, source_name=f"file:{Path(path).name}")
+                        res = self.services.import_fhir_package_file(path, source_name=f"file:{Path(path).name}")
                         self._log(res.message)
                         self._refresh_fhir_views()
                     except Exception as e:
@@ -1718,7 +1735,7 @@ def export_fhir_selected_json_dialog(self) -> None:
             return
         out = d.get_file().get_path()
         try:
-            res = export_selected_bundle_json(self.conn, idents, out)
+            res = self.services.export_selected_json(idents, out)
             self._log(res.message)
         except Exception as e:
             self._log(f"Export selected JSON failed: {e}")
