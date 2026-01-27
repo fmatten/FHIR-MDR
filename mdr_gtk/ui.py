@@ -241,10 +241,10 @@ class MDRWindow(Gtk.ApplicationWindow):
         grid = Gtk.Grid(column_spacing=12, row_spacing=10)
         self.detail.append(grid)
 
-    def add_row(r: int, label: str, widget: Gtk.Widget):
-        l = Gtk.Label(label=label, xalign=0)
-        grid.attach(l, 0, r, 1, 1)
-        grid.attach(widget, 1, r, 1, 1)
+        def add_row(r: int, label: str, widget: Gtk.Widget):
+            l = Gtk.Label(label=label, xalign=0)
+            grid.attach(l, 0, r, 1, 1)
+            grid.attach(widget, 1, r, 1, 1)
 
         self.f_uuid = Gtk.Entry()
         self.f_uuid.set_editable(False)
@@ -256,8 +256,8 @@ class MDRWindow(Gtk.ApplicationWindow):
         def_sc.set_min_content_height(120)
         def_sc.set_child(self.f_def)
 
-        self.f_reg_status = Gtk.DropDown.new_from_strings(["Candidate","Recorded","Qualified","Standard","Retired"])
-        self.f_admin_status = Gtk.DropDown.new_from_strings(["Draft","Released","Superseded","Deprecated"])
+        self.f_reg_status = Gtk.DropDown.new_from_strings(["Candidate", "Recorded", "Qualified", "Standard", "Retired"])
+        self.f_admin_status = Gtk.DropDown.new_from_strings(["Draft", "Released", "Superseded", "Deprecated"])
         self.f_steward = Gtk.Entry()
 
         add_row(0, "UUID", self.f_uuid)

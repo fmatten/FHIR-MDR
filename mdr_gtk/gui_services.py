@@ -9,6 +9,7 @@ from typing import Iterable, Sequence
 from mdr_gtk.services import ensure_schema_applied
 from mdr_gtk.fhir_ingest import import_fhir_bundle_json, import_fhir_package
 from mdr_gtk.fhir_selected_export import export_selected_bundle_json, export_selected_bundle_xml
+from mdr_gtk.fhir_filter import CuratedFilter, build_curated_query
 
 
 @dataclass
@@ -54,4 +55,24 @@ class GUIServiceFacade:
 
     def export_selected_xml(self, curated_idents: Sequence[str], out_path: str):
         self.ensure_schema()
+        return export_selected_bundle_xml(self.conn, curated_idents, out_path)
+
+    def export_all_json(self, out_path: str, curated_filter: CuratedFilter | None = None):
+        """Export all curated resources as JSON bundle.
+
+        Optionally restrict by :class:`~mdr_gtk.fhir_filter.CuratedFilter`.
+        """
+        self.ensure_schema()
+        sql, params = build_curated_query(curated_filter)
+        curated_idents = [r[0] for r in self.conn.execute(sql, params).fetchall()]
+        return export_selected_bundle_json(self.conn, curated_idents, out_path)
+
+    def export_all_xml(self, out_path: str, curated_filter: CuratedFilter | None = None):
+        """Export all curated resources as XML bundle.
+
+        Optionally restrict by :class:`~mdr_gtk.fhir_filter.CuratedFilter`.
+        """
+        self.ensure_schema()
+        sql, params = build_curated_query(curated_filter)
+        curated_idents = [r[0] for r in self.conn.execute(sql, params).fetchall()]
         return export_selected_bundle_xml(self.conn, curated_idents, out_path)

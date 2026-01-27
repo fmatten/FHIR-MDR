@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mdr-gtk"
-version = "0.0.3"
+version = "0.0.4"
 description = "ISO/IEC 11179 core+ MDR for SQLite with GTK4 PyGObject GUI"
 readme = "README.md"
 requires-python = ">=3.10"
