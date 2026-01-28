@@ -1,4 +1,3 @@
-PYTHONTRACEMALLOC=25 PYTHONWARNINGS=error::ResourceWarning python - <<'PY'
 import os, tempfile, inspect
 
 import gi
@@ -33,4 +32,3 @@ while ctx.pending():
     ctx.iteration(False)
 
 print("GUI strict-clean OK")
-PY
