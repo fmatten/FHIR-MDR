@@ -9,6 +9,9 @@
 - Packaging skeleton for Windows/macOS (documentation + scripts)
 
 
+## v0.0.2
+- Fix GUI startup: restore missing _RefDropDown helper
+
 
 ## v0.0.3 - 2026-01-22
 
@@ -22,8 +25,3 @@
 
 ### Fixed
 - Stabilized ingest tests (unique test bundle filenames/IDs) to prevent accidental overwrites during test runs.
-
-
-
-## v0.0.2
-- Fix GUI startup: restore missing _RefDropDown helper
