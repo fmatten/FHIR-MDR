@@ -21,3 +21,8 @@ include-package-data = true
 where = ["."]
 include = ["mdr_gtk*"]
 exclude = ["packaging*", "migrations*", "tests*"]
+
+[project.optional-dependencies]
+gui = [
+  "PyGObject"
+]
