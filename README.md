@@ -1,4 +1,4 @@
-# FHIR-MDR (ISO/IEC 11179-inspired) — v0.0.1
+# FHIR-MDR (ISO/IEC 11179-inspired) — v0.0.4
 
 FHIR-MDR is a lightweight **Meta Data Repository (MDR)** for managing **FHIR R4 conformance artefacts**
 (e.g., StructureDefinitions, ValueSets, CodeSystems, etc.) with a pragmatic ISO/IEC 11179-inspired approach.
@@ -6,7 +6,7 @@ FHIR-MDR is a lightweight **Meta Data Repository (MDR)** for managing **FHIR R4 
 **Scope:** This is **not** a patient data store. It is a repository for **artefacts, provenance, variants, conflicts,
 and reproducible exports**.
 
-> Status: **Early preview (v0.0.1)** — functional, test-backed core, packaging/CI still evolving.
+> Status: **Early preview (v0.0.4)** — functional, test-backed core, packaging/CI still evolving.
 
 ## Key ideas
 
@@ -88,7 +88,7 @@ python3 -m mdr_gtk.scripts.import_fhir_package --db mdr.sqlite path/to/package.t
 - `conflicts only` toggle
 - Limit results for performance
 
-## Limitations (v0.0.1)
+## Limitations (v0.0.4)
 
 - Windows/macOS distribution is not yet “one-click”. See `packaging/` (skeleton).
 - GUI is functional but not fully covered by E2E UI tests.

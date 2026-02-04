@@ -25,3 +25,9 @@
 
 ### Fixed
 - Stabilized ingest tests (unique test bundle filenames/IDs) to prevent accidental overwrites during test runs.
+
+## v0.0.4
+- GUI Services/Fassade (routing)
+- Export Services
+- Strict-clean GUI Test
+- ResourceWarning Hardening
