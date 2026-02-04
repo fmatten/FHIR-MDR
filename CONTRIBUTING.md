@@ -5,6 +5,13 @@ Thanks for your interest in contributing!
 ## Development setup
 - Python 3.10+ recommended
 - GTK4 + PyGObject (gi)
+- Debian/Ubuntu (Beispiel):
+  - python3-gi, gir1.2-gtk-4.0, libgtk-4-1 (und ggf. Build deps, falls pip PyGObject genutzt wird)
+- Dann:
+  - pip install -e .
+  - python -m unittest -v
+  - Optional: PYTHONWARNINGS=error::ResourceWarning
+
 
 Run checks:
 ```bash

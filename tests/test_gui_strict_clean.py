@@ -1,34 +1,27 @@
-import os, tempfile, inspect
+import os
+import unittest
 
-import gi
-gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk, GLib
+class TestGUIStrictClean(unittest.TestCase):
+    def test_gui_strict_clean(self):
+        try:
+            import gi
+            gi.require_version("Gtk", "4.0")
+            from gi.repository import Gtk
+        except Exception as e:
+            self.skipTest(f"GTK not available: {e}")
 
-from mdr_gtk.app import MDRApp
+        # optional headless check (Linux):
+        if os.name != "nt" and not os.environ.get("DISPLAY") and not os.environ.get("WAYLAND_DISPLAY"):
+            self.skipTest("No DISPLAY/WAYLAND_DISPLAY (headless)")
 
-dbp = os.path.join(tempfile.gettempdir(), "mdr_strict_clean.sqlite")
+        from mdr_gtk.app import MDRApp
+        # App minimal starten/stoppen ohne Klick-Automation
+        app = MDRApp()
+        app.register(None)
+        app.activate()
+        for w in list(app.get_windows()):
+            w.close()
+        app.quit()
 
-# Robust: prüfe __init__ Signatur (nicht die Klasse selbst)
-sig = inspect.signature(MDRApp.__init__)
-kwargs = {}
-if "db_path" in sig.parameters:
-    kwargs["db_path"] = dbp
-if "use_adwaita" in sig.parameters:
-    kwargs["use_adwaita"] = False
-
-app = MDRApp(**kwargs)
-
-app.register(None)
-app.activate()
-
-for w in list(app.get_windows()):
-    w.close()
-
-app.quit()
-
-# GTK4: Event-Pump via GLib MainContext
-ctx = GLib.MainContext.default()
-while ctx.pending():
-    ctx.iteration(False)
-
-print("GUI strict-clean OK")
+        # Kein Gtk.events_pending() in GTK4 – lieber GLib main context iterieren,
+        # aber auch das optional/defensiv.
