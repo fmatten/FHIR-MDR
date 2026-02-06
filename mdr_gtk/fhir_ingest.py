@@ -236,19 +236,25 @@ def iter_package_json_files(root: Path) -> list[Path]:
 def _extract_tgz_to_temp(tgz_path: Path):
     """Extract tgz to a TemporaryDirectory and return (root_path, tmpdir).
 
+    The caller MUST call tmpdir.cleanup() when done.
+
     Keeping the TemporaryDirectory object alive prevents automatic cleanup
     during the import.
     """
     td = tempfile.TemporaryDirectory()
-    out = Path(td.name)
-    with tarfile.open(tgz_path, "r:*") as tf:
-        if sys.version_info >= (3, 12):
-            tf.extractall(out, filter="data")
-        else:
-            tf.extractall(out)
-    # npm packages usually have "package/"
-    root = out / "package" if (out / "package").exists() else out
-    return root, td
+    try:
+        out = Path(td.name)
+        with tarfile.open(tgz_path, "r:*") as tf:
+            if sys.version_info >= (3, 12):
+                tf.extractall(out, filter="data")
+            else:
+                tf.extractall(out)
+        # npm packages usually have "package/"
+        root = out / "package" if (out / "package").exists() else out
+        return root, td
+    except Exception:
+        td.cleanup()
+        raise
 
 
 
@@ -271,6 +277,7 @@ def import_fhir_package(
         return ImportResult(False, f"Missing package path: {p}")
 
     run_id = _new_run(conn, source_name=source_name, source_kind="package", partition_key=partition_key)
+    _td = None
     try:
         root = p
         if p.is_file() and (p.suffix in (".tgz", ".gz") or p.name.endswith(".tar.gz")):
@@ -418,6 +425,10 @@ def import_fhir_package(
     except Exception as e:
         conn.rollback()
         return ImportResult(False, f"Package import failed: {e}", run_id=run_id, raw_count=0)
+
+    finally:
+        if _td is not None:
+            _td.cleanup()
 # --- XML support (Bundle import) ---------------------------------------------
 import xml.etree.ElementTree as ET
 
