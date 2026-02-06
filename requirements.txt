@@ -1,2 +1,7 @@
-PyGObject>=3.44
-
+iniconfig==2.3.0
+packaging==26.0
+pluggy==1.6.0
+pycairo==1.29.0
+Pygments==2.19.2
+PyGObject==3.54.5
+pytest==9.0.2

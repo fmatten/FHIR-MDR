@@ -165,7 +165,18 @@ def resource_to_xml_element(resource: dict[str, Any], *, mode: str = "best-effor
                     _serialize_generic(root, k, v)
                 return XmlBuildResult(True, f"OK (strictish fallback for {rt})", element=root)
             return XmlBuildResult(False, f"Strict XML supports only: {sorted(SUPPORTED_STRICT_TYPES)} (got {rt})")
-        order = STRICT_FIELD_ORDER[rt]
+        order = STRICT_FIELD_ORDER.get(rt)
+        if order is None:
+            # SUPPORTED_STRICT_TYPES and STRICT_FIELD_ORDER can drift. In strictish mode we must never crash;
+            # fall back to generic (best-effort) XML when strict metadata for this type is missing.
+            if mode == "strictish":
+                root = ET.Element(_tag(rt))
+                for k, v in resource.items():
+                    if k == "resourceType":
+                        continue
+                    _serialize_generic(root, k, v)
+                return XmlBuildResult(True, f"OK (strictish fallback missing field order for {rt})", element=root)
+            return XmlBuildResult(False, f"Strict XML missing field order for {rt}")
         allowed = set(order)
         unknown = _unknown_fields(resource, allowed)
         if unknown:
