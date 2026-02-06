@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Iterable, Optional, Tuple
 
 import sqlite3
+import sys
 
 
 CONFORMANCE_TYPES = {
@@ -241,7 +242,10 @@ def _extract_tgz_to_temp(tgz_path: Path):
     td = tempfile.TemporaryDirectory()
     out = Path(td.name)
     with tarfile.open(tgz_path, "r:*") as tf:
-        tf.extractall(out)
+        if sys.version_info >= (3, 12):
+            tf.extractall(out, filter="data")
+        else:
+            tf.extractall(out)
     # npm packages usually have "package/"
     root = out / "package" if (out / "package").exists() else out
     return root, td

@@ -1,4 +1,5 @@
 import os
+import tempfile
 import unittest
 
 class TestGUIStrictClean(unittest.TestCase):
@@ -16,7 +17,20 @@ class TestGUIStrictClean(unittest.TestCase):
 
         from mdr_gtk.app import MDRApp
         # App minimal starten/stoppen ohne Klick-Automation
-        app = MDRApp()
+        fd, db_path = tempfile.mkstemp(suffix=".sqlite")
+        os.close(fd)
+        try:
+            app = MDRApp(db_path)
+            app.register(None)
+            app.activate()
+            for w in list(app.get_windows()):
+                w.close()
+            app.quit()
+        finally:
+            try:
+                os.remove(db_path)
+            except OSError:
+                pass
         app.register(None)
         app.activate()
         for w in list(app.get_windows()):
