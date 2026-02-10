@@ -1,3 +1,11 @@
+# FHIR-MDR (Legacy GTK)
+
+Dieses Repository ist **archived/legacy** und wird nicht mehr aktiv weiterentwickelt.
+
+➡️ Die aktuelle Qt-Version ist hier: **fmatten/FHIR-MDR-Qt**
+
+
+
 # FHIR-MDR (ISO/IEC 11179-inspired) — v0.0.4
 
 FHIR-MDR is a lightweight **Meta Data Repository (MDR)** for managing **FHIR R4 conformance artefacts**
